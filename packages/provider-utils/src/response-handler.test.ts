@@ -1,7 +1,9 @@
+import { APICallError } from '@ai-sdk/provider';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
 import {
   createBinaryResponseHandler,
+  createJsonErrorResponseHandler,
   createJsonResponseHandler,
   createStatusCodeErrorResponseHandler,
 } from './response-handler';
@@ -63,6 +65,74 @@ describe('createBinaryResponseHandler', () => {
         response,
       }),
     ).rejects.toThrow('Response body is empty');
+  });
+
+  it('should reject oversized binary responses', async () => {
+    const largeBody = new Uint8Array(200);
+    largeBody.fill(1);
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(largeBody);
+        controller.close();
+      },
+    });
+
+    const response = {
+      headers: new Headers(),
+      body: stream,
+    } as unknown as Response;
+
+    const handler = createBinaryResponseHandler(50);
+
+    await expect(
+      handler({
+        url: 'test-url',
+        requestBodyValues: {},
+        response,
+      }),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(APICallError);
+      expect((error as APICallError).statusCode).toBe(413);
+      return true;
+    });
+  });
+});
+
+describe('createJsonErrorResponseHandler', () => {
+  it('should reject oversized error responses', async () => {
+    const errorSchema = z.object({ message: z.string() });
+    const handler = createJsonErrorResponseHandler({
+      errorSchema,
+      errorToMessage: error => error.message,
+      maxResponseBytes: 50,
+    });
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(' '.repeat(200)));
+        controller.close();
+      },
+    });
+
+    const response = {
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: new Headers(),
+      body: stream,
+    } as unknown as Response;
+
+    await expect(
+      handler({
+        url: 'test-url',
+        requestBodyValues: {},
+        response,
+      }),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(APICallError);
+      expect((error as APICallError).statusCode).toBe(413);
+      return true;
+    });
   });
 });
 

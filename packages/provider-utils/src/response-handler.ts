@@ -2,7 +2,13 @@ import { APICallError, EmptyResponseBodyError } from '@ai-sdk/provider';
 import { extractResponseHeaders } from './extract-response-headers';
 import { parseJSON, safeParseJSON, type ParseResult } from './parse-json';
 import { parseJsonEventStream } from './parse-json-event-stream';
+import {
+  DEFAULT_MAX_JSON_RESPONSE_SIZE,
+  readTextResponseWithSizeLimit,
+} from './read-text-response-with-size-limit';
+import { readResponseWithSizeLimit } from './read-response-with-size-limit';
 import type { FlexibleSchema } from './schema';
+import { DownloadError } from './download-error';
 
 export type ResponseHandler<RETURN_TYPE> = (options: {
   url: string;
@@ -19,13 +25,18 @@ export const createJsonErrorResponseHandler =
     errorSchema,
     errorToMessage,
     isRetryable,
+    maxResponseBytes = DEFAULT_MAX_JSON_RESPONSE_SIZE,
   }: {
     errorSchema: FlexibleSchema<T>;
     errorToMessage: (error: T) => string;
     isRetryable?: (response: Response, error?: T) => boolean;
+    maxResponseBytes?: number;
   }): ResponseHandler<APICallError> =>
   async ({ response, url, requestBodyValues }) => {
-    const responseBody = await response.text();
+    const responseBody = await readTextResponseWithSizeLimit(
+      response,
+      maxResponseBytes,
+    );
     const responseHeaders = extractResponseHeaders(response);
 
     // Some providers return an empty response body for some errors:
@@ -101,9 +112,15 @@ export const createEventSourceResponseHandler =
   };
 
 export const createJsonResponseHandler =
-  <T>(responseSchema: FlexibleSchema<T>): ResponseHandler<T> =>
+  <T>(
+    responseSchema: FlexibleSchema<T>,
+    maxResponseBytes: number = DEFAULT_MAX_JSON_RESPONSE_SIZE,
+  ): ResponseHandler<T> =>
   async ({ response, url, requestBodyValues }) => {
-    const responseBody = await response.text();
+    const responseBody = await readTextResponseWithSizeLimit(
+      response,
+      maxResponseBytes,
+    );
 
     const parsedResult = await safeParseJSON({
       text: responseBody,
@@ -132,7 +149,9 @@ export const createJsonResponseHandler =
   };
 
 export const createBinaryResponseHandler =
-  (): ResponseHandler<Uint8Array> =>
+  (
+    maxResponseBytes: number = DEFAULT_MAX_JSON_RESPONSE_SIZE,
+  ): ResponseHandler<Uint8Array> =>
   async ({ response, url, requestBodyValues }) => {
     const responseHeaders = extractResponseHeaders(response);
 
@@ -148,12 +167,28 @@ export const createBinaryResponseHandler =
     }
 
     try {
-      const buffer = await response.arrayBuffer();
+      const buffer = await readResponseWithSizeLimit({
+        response,
+        url,
+        maxBytes: maxResponseBytes,
+      });
       return {
         responseHeaders,
-        value: new Uint8Array(buffer),
+        value: buffer,
       };
     } catch (error) {
+      if (DownloadError.isInstance(error)) {
+        throw new APICallError({
+          message: error.message,
+          url,
+          requestBodyValues,
+          statusCode: 413,
+          responseHeaders,
+          responseBody: undefined,
+          cause: error,
+        });
+      }
+
       throw new APICallError({
         message: 'Failed to read response as array buffer',
         url,
@@ -167,10 +202,15 @@ export const createBinaryResponseHandler =
   };
 
 export const createStatusCodeErrorResponseHandler =
-  (): ResponseHandler<APICallError> =>
+  (
+    maxResponseBytes: number = DEFAULT_MAX_JSON_RESPONSE_SIZE,
+  ): ResponseHandler<APICallError> =>
   async ({ response, url, requestBodyValues }) => {
     const responseHeaders = extractResponseHeaders(response);
-    const responseBody = await response.text();
+    const responseBody = await readTextResponseWithSizeLimit(
+      response,
+      maxResponseBytes,
+    );
 
     return {
       responseHeaders,
