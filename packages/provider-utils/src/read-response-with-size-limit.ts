@@ -38,8 +38,10 @@ export async function readResponseWithSizeLimit({
 }): Promise<Uint8Array> {
   // Early rejection based on Content-Length header
   const contentLength = response.headers.get('content-length');
+  
   if (contentLength != null) {
     const length = parseInt(contentLength, 10);
+    
     if (!isNaN(length) && length > maxBytes) {
       // Cancel the body so the underlying connection is released back to the
       // pool instead of being left open until the socket is exhausted.
@@ -92,6 +94,7 @@ export async function readResponseWithSizeLimit({
   // Concatenate chunks into a single Uint8Array
   const result = new Uint8Array(totalBytes);
   let offset = 0;
+  
   for (const chunk of chunks) {
     result.set(chunk, offset);
     offset += chunk.length;
