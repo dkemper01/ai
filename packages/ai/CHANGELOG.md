@@ -1,5 +1,25 @@
 # ai
 
+## 7.0.0-canary.176
+
+### Patch Changes
+
+- Updated dependencies [d5b8263]
+  - @ai-sdk/gateway@4.0.0-canary.107
+
+## 7.0.0-canary.175
+
+### Patch Changes
+
+- 6ec57f5: feat(ai): make the experimental lifecycle callbacks stable
+
+## 7.0.0-canary.174
+
+### Patch Changes
+
+- Updated dependencies [ca2cf45]
+  - @ai-sdk/gateway@4.0.0-canary.106
+
 ## 7.0.0-canary.173
 
 ### Patch Changes
