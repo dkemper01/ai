@@ -13,13 +13,14 @@ function createMockTextResponse({
   contentLength?: string;
 }): { response: Response; cancelled: () => boolean } {
   const headers = new Headers();
+
   if (contentLength != null) {
     headers.set('content-length', contentLength);
   }
 
   let cancelled = false;
   const encoder = new TextEncoder();
-
+  
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const chunk of chunks) {

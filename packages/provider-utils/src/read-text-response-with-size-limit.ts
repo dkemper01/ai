@@ -24,8 +24,10 @@ export async function readTextResponseWithSizeLimit(
 ): Promise<string> {
   // Early rejection based on Content-Length header
   const contentLength = response.headers.get('content-length');
+
   if (contentLength != null) {
     const length = parseInt(contentLength, 10);
+
     if (!isNaN(length) && length > maxBytes) {
       await cancelResponseBody(response);
       throw new APICallError({
